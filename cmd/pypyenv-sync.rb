@@ -22,7 +22,7 @@ module Homebrew
   end
 
   sig { void }
-  def pyenv_sync
+  def pypyenv_sync
     dot_pyenv = Pathname(Dir.home)/".pyenv"
 
     # Don't run multiple times at once.
@@ -59,7 +59,7 @@ module Homebrew
     patch_version = version.patch.to_i
 
     (0..patch_version).each do |patch|
-      link_path = pyenv_versions/"#{major_version}.#{minor_version}.#{patch}"
+      link_path = pyenv_versions/"pypy#{major_version}.#{minor_version}-#{major_version}.#{minor_version}.#{patch}"
 
       FileUtils.rm_f link_path
       FileUtils.ln_sf path, link_path
