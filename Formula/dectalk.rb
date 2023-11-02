@@ -1,24 +1,21 @@
 # Documentation: https://docs.brew.sh/Formula-Cookbook
 #                https://rubydoc.brew.sh/Formula
 # PLEASE REMOVE ALL GENERATED COMMENTS BEFORE SUBMITTING YOUR PULL REQUEST!
-class Cwiid < Formula
-  desc ""
-  homepage ""
-  url "https://github.com/abstrakraft/cwiid/archive/refs/tags/cwiid-0.6.00.tar.gz"
-  sha256 "e8b604e8eb60cddaf6915ce0d7d353ae555111c94685bb3b5f05882d67653f8c"
-  license ""
+class Dectalk < Formula
+  desc "Modern builds for the 90s/00s DECtalk text-to-speech application. "
+  homepage "https://dectalk.github.io/dectalk/dectalk.htm"
+  url "https://github.com/dectalk/dectalk/archive/refs/tags/2023-10-30.zip"
+  sha256 "ad07202f8093d0a295acbfc1b8662f43bd2c1a100c237ab9089d134aa99f09f1"
 
   depends_on "autoconf" => :build
-  depends_on "python" => :build
-  depends_on "bluetoothconnector" => :build
-  depends_on "blueutil" => :build
-
 
   def install
     # ENV.deparallelize  # if your formula fails when building in parallel
     # Remove unrecognized options if warned by configure
     # https://rubydoc.brew.sh/Formula.html#std_configure_args-instance_method
-    system "autoconf"
+
+    system "cd", "src/"
+    # system "autoreconf", "-si"
     system "./configure", *std_configure_args, "--disable-silent-rules"
     system "make", "install" # if this fails, try separate make/make install steps
   end
@@ -28,7 +25,7 @@ class Cwiid < Formula
     #
     # This test will fail and we won't accept that! For Homebrew/homebrew-core
     # this will need to be a test that verifies the functionality of the
-    # software. Run the test with `brew test cwiid`. Options passed
+    # software. Run the test with `brew test DECtalk`. Options passed
     # to `brew install` such as `--HEAD` also need to be provided to `brew test`.
     #
     # The installed folder is not in the path, so use the entire path to any
