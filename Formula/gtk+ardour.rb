@@ -46,10 +46,10 @@ class Gtkxardour < Formula
 #    sha256 "b9bbdcd06302da0155534a9c5155b1c11b86834c700c504e635626defa181b00"
 #  end
 
-  patch do
-  url "https://git.ardour.org/ardour/ardour/raw/commit/4ca457bb9ec920e2206aa17f449e1ff561242d42/tools/patches/gtk-osx.patch"
-  sha256 "3b67114cd3ac0510c5638b08f0b36c94a6932ebdf6fc630d8e5414f632ab8b78"
-  end
+  # patch do
+  # url "https://git.ardour.org/ardour/ardour/raw/commit/4ca457bb9ec920e2206aa17f449e1ff561242d42/tools/patches/gtk-osx.patch"
+  # sha256 "3b67114cd3ac0510c5638b08f0b36c94a6932ebdf6fc630d8e5414f632ab8b78"
+  # end
 
   # Patch to allow Eiffel Studio to run in Cocoa / non-X11 mode, as well as Freeciv's freeciv-gtk2 client
   # See:
