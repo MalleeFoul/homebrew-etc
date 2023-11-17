@@ -9,12 +9,18 @@ class LspDspLib < Formula
   license ""
 
   # depends_on "cmake" => :build
+  depends_on "gnumake"
 
   def install
     # ENV.deparallelize  # if your formula fails when building in parallel
     # Remove unrecognized options if warned by configure
     # https://rubydoc.brew.sh/Formula.html#std_configure_args-instance_method
-    system "./configure", *std_configure_args, "--disable-silent-rules"
+    system "make", "config", "PREFIX=#{prefix}", "LIBDIR=#{lib}"
+    system "make", "fetch"
+    system "make"
+    system "make", "install"
+    
+    # system "./configure", *std_configure_args, "--disable-silent-rules"
     # system "cmake", "-S", ".", "-B", "build", *std_cmake_args
   end
 
