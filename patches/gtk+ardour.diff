@@ -1,0 +1,332 @@
+diff --git a/gdk/quartz/GdkQuartzWindow.c b/gdk/quartz/GdkQuartzWindow.c
+index 7c08712..8b9dca4 100644
+--- a/gdk/quartz/GdkQuartzWindow.c
++++ b/gdk/quartz/GdkQuartzWindow.c
+@@ -625,6 +625,41 @@ update_context_from_dragging_info (id <NSDraggingInfo> sender)
+   event.dnd.send_event = FALSE;
+   event.dnd.context = _gdk_quartz_drag_source_context;
+ 
++  /* Check to see if the coordinates are inside a known GdkWindow */
++
++  GdkScreen* screen = gdk_window_get_screen (event.dnd.window);
++
++  if (screen) 
++    {
++       GList* windows, *list;
++       gint gx, gy;
++       
++       event.dnd.context->dest_window = NULL;
++
++       windows = gdk_screen_get_toplevel_windows (screen);
++       _gdk_quartz_window_nspoint_to_gdk_xy (aPoint, &gx, &gy);
++       
++       for (list = windows; list; list = list->next) 
++         {
++            GdkWindow* win = (GdkWindow*) list->data;
++            gint wx, wy;
++            gint ww, wh;
++            
++            gdk_window_get_root_origin (win, &wx, &wy);
++            ww = gdk_window_get_width (win);
++            wh = gdk_window_get_height (win);
++            
++            if (gx > wx && 
++                gy > wy &&
++                gx <= wx + ww && 
++                gy <= wy + wh) 
++              {
++                 /* found a toplevel GdkWindow at the drop position */
++                 event.dnd.context->dest_window = win;
++              }
++         }
++    }
++
+   (*_gdk_event_func) (&event, _gdk_event_data);
+ 
+   g_object_unref (event.dnd.window);
+diff --git a/gdk/quartz/gdkevents-quartz.c b/gdk/quartz/gdkevents-quartz.c
+index 9e57edd..a1b535f 100644
+--- a/gdk/quartz/gdkevents-quartz.c
++++ b/gdk/quartz/gdkevents-quartz.c
+@@ -65,6 +65,18 @@ gdk_quartz_event_get_nsevent (GdkEvent *event)
+   return ((GdkEventPrivate *) event)->windowing_data;
+ }
+ 
++/* A category that exposes the protected carbon event for an NSEvent. */
++@interface NSEvent (GdkQuartzNSEvent)
++- (void *)gdk_quartz_event_ref;
++@end 
++
++@implementation NSEvent (GdkQuartzNSEvent)
++- (void *)gdk_quartz_event_ref
++{
++  return _eventRef;
++}
++@end
++
+ static void
+ gdk_quartz_ns_notification_callback (CFNotificationCenterRef  center,
+                                      void                    *observer,
+@@ -1285,6 +1297,66 @@ test_resize (NSEvent *event, GdkWindow *toplevel, gint x, gint y)
+ }
+ 
+ static gboolean
++	_gdk_quartz_possibly_forward_accelerator (NSEvent* nsevent)
++	{
++	  /* Special-case menu shortcut events. We create command events for
++	   * those and forward to the corresponding menu.
++	   */
++	  if ((!_gdk_quartz_keyboard_grab_window ||
++	       (_gdk_quartz_keyboard_grab_window && keyboard_grab_owner_events)) &&
++	      [nsevent type] == NSKeyDown)
++	    {
++	      EventRef event_ref;
++	      MenuRef menu_ref;
++	      MenuItemIndex index;
++
++	      event_ref = [nsevent gdk_quartz_event_ref];
++	      if (IsMenuKeyEvent (NULL, event_ref,
++	                          kMenuEventQueryOnly, 
++	                          &menu_ref, &index))
++	        {
++	          MenuCommand menu_command;
++	          HICommand hi_command;
++
++	          if (GetMenuItemCommandID (menu_ref, index, &menu_command) != noErr)
++	            return FALSE;
++   
++	          hi_command.commandID = menu_command;
++	          hi_command.menu.menuRef = menu_ref;
++	          hi_command.menu.menuItemIndex = index;
++
++	          CreateEvent (NULL, kEventClassCommand, kEventCommandProcess, 
++	                       0, kEventAttributeUserEvent, &event_ref);
++	          SetEventParameter (event_ref, kEventParamDirectObject, 
++	                             typeHICommand, 
++	                             sizeof (HICommand), &hi_command);
++
++	          SendEventToEventTarget (event_ref, GetMenuEventTarget (menu_ref));
++
++	          ReleaseEvent (event_ref);
++
++	          return TRUE;
++	        }
++	    }
++	  return FALSE;
++	}
++
++	gboolean
++	gdk_quartz_possibly_forward (GdkEvent* event)
++	{
++	  NSEvent *nsevent;
++	  g_return_val_if_fail (event != NULL, FALSE);
++
++	  nsevent = ((GdkEventPrivate*)event)->windowing_data;
++
++	  if (nsevent)
++	    return _gdk_quartz_possibly_forward_accelerator (nsevent);
++
++	  return FALSE;
++	}
++
++	static gboolean
++
+ gdk_event_translate (GdkEvent *event,
+                      NSEvent  *nsevent)
+ {
+diff --git a/gtk/gtkdnd-quartz.c b/gtk/gtkdnd-quartz.c
+index 28c5f78..a0bea5d 100644
+--- a/gtk/gtkdnd-quartz.c
++++ b/gtk/gtkdnd-quartz.c
+@@ -233,6 +233,8 @@ gtk_drag_get_data (GtkWidget      *widget,
+ 			     0, time);
+     }
+   
++  
++  
+   if (site && site->flags & GTK_DEST_DEFAULT_DROP)
+     {
+       gtk_drag_finish (context, 
+@@ -890,6 +892,9 @@ gtk_drag_dest_drop (GtkWidget	     *widget,
+       else
+ 	gtk_drag_get_data (widget, context, target, time);
+     }
++  /* leave a note for the source-side context about the action chosen */
++  
++
+   
+   g_signal_emit_by_name (widget, "drag-drop",
+ 			 context, x, y, time, &retval);
+@@ -1072,9 +1077,6 @@ gtk_drag_begin_idle (gpointer arg)
+   GdkDragContext* context = (GdkDragContext*) arg;
+   GtkDragSourceInfo* info = gtk_drag_get_source_info (context, FALSE);
+   NSWindow *nswindow;
+-  NSPasteboard *pasteboard;
+-  GtkDragSourceOwner *owner;
+-  NSPoint point;
+   NSSet *types;
+   NSImage *drag_image;
+ 
+@@ -1190,7 +1192,8 @@ gtk_drag_begin_internal (GtkWidget         *widget,
+   context->is_source = TRUE;
+ 
+   info = gtk_drag_get_source_info (context, TRUE);
+-  info->nsevent = nsevent;
++  nswindow = get_toplevel_nswindow (widget);
++  info->nsevent = nswindow currentEvent];
+   [info->nsevent retain];
+ 
+   info->source_widget = g_object_ref (widget);
+@@ -1928,16 +1931,30 @@ gtk_drag_source_info_destroy (GtkDragSourceInfo *info)
+ static gboolean
+ drag_drop_finished_idle_cb (gpointer data)
+ {
+-  gtk_drag_source_info_destroy (data);
++    GtkDragSourceInfo* info = (GtkDragSourceInfo*) data;
++    if (info->success) 
++      {
++         gtk_drag_source_info_destroy (data);
++      }
++  
+   return FALSE;
+ }
+ 
+ static void
+-gtk_drag_drop_finished (GtkDragSourceInfo *info)
++gtk_drag_drop_finished (GtkDragSourceInfo *info, GtkDragResult result)
+ {
+-  if (info->success && info->delete)
+-    g_signal_emit_by_name (info->source_widget, "drag-data-delete",
+-                           info->context);
++    gboolean success = (result == GTK_DRAG_RESULT_SUCCESS);
++
++    if (!success) {
++            g_signal_emit_by_name (info->source_widget, "drag-failed",
++                                   info->context, GTK_DRAG_RESULT_NO_TARGET, &success);
++    }
++            
++    if (success && info->delete) {
++            g_signal_emit_by_name (info->source_widget, "drag-data-delete",
++                                   info->context);
++    }
++
+ 
+   /* Workaround for the fact that the NS API blocks until the drag is
+    * over. This way the context is still valid when returning from
+@@ -1963,6 +1980,7 @@ _gtk_drag_source_handle_event (GtkWidget *widget,
+ {
+   GtkDragSourceInfo *info;
+   GdkDragContext *context;
++  GtkDragResult result;
+ 
+   g_return_if_fail (widget != NULL);
+   g_return_if_fail (event != NULL);
+@@ -1975,7 +1993,8 @@ _gtk_drag_source_handle_event (GtkWidget *widget,
+   switch (event->type)
+     {
+     case GDK_DROP_FINISHED:
+-      gtk_drag_drop_finished (info);
++    result = (gdk_drag_context_get_dest_window (context) != NULL) ? GTK_DRAG_RESULT_SUCCESS : GTK_DRAG_RESULT_NO_TARGET;
++    gtk_drag_drop_finished (info, result);
+       break;
+     default:
+       g_assert_not_reached ();
+diff --git a/gtk/gtkquartz.c b/gtk/gtkquartz.c
+index d630abc..1c85442 100644
+--- a/gtk/gtkquartz.c
++++ b/gtk/gtkquartz.c
+@@ -25,6 +25,24 @@
+ #include "gtkalias.h"
+ 
+ NSImage *
++	_gtk_quartz_create_image_from_drawable (GdkDrawable* drawable)
++	{
++		GdkPixbuf* pixbuf;
++		NSImage* image = NULL;
++
++		pixbuf = gdk_pixbuf_get_from_drawable (NULL, drawable, NULL, 
++							  0, 0, /* src */
++							  0, 0, /* dst */
++							  -1, -1);
++		if (pixbuf) 
++	   	  image = _gtk_quartz_create_image_from_pixbuf (pixbuf);
++	
++		return image;
++	}
++
++
++	NSImage *
++
+ _gtk_quartz_create_image_from_pixbuf (GdkPixbuf *pixbuf)
+ {
+   CGColorSpaceRef colorspace;
+diff --git a/gtk/gtkquartz.h b/gtk/gtkquartz.h
+index 41fa1ee..784dff0 100644
+--- a/gtk/gtkquartz.h
++++ b/gtk/gtkquartz.h
+@@ -40,6 +40,7 @@ void _gtk_quartz_set_selection_data_for_pasteboard (NSPasteboard *pasteboard,
+ 						    GtkSelectionData *selection_data);
+ 			
+ NSImage *_gtk_quartz_create_image_from_pixbuf (GdkPixbuf *pixbuf);
++NSImage *_gtk_quartz_create_image_from_drawable (GdkDrawable *drawable);
+ 			    
+ G_END_DECLS
+ 
+diff --git a/gtk/gtktooltip.c b/gtk/gtktooltip.c
+index 9918165..e2e99e3 100644
+--- a/gtk/gtktooltip.c
++++ b/gtk/gtktooltip.c
+@@ -505,6 +505,7 @@ void
+ gtk_tooltip_trigger_tooltip_query (GdkDisplay *display)
+ {
+   gint x, y;
++  gint rx, ry;
+   GdkWindow *window;
+   GdkEvent event;
+ 
+@@ -513,10 +514,13 @@ gtk_tooltip_trigger_tooltip_query (GdkDisplay *display)
+   if (!window)
+     return;
+ 
++  gdk_window_get_origin (window, &rx, &ry);
+   event.type = GDK_MOTION_NOTIFY;
+   event.motion.window = window;
+   event.motion.x = x;
++  event.motion.x_root = rx + x;
+   event.motion.y = y;
++  event.motion.y_root = ry + y;
+   event.motion.is_hint = FALSE;
+ 
+   gdk_window_get_root_coords (window, x, y, &x, &y);
+diff --git a/gtk/gtktreeview.c b/gtk/gtktreeview.c
+index eccd20c..af40e0b 100644
+--- a/gtk/gtktreeview.c
++++ b/gtk/gtktreeview.c
+@@ -2589,6 +2589,7 @@ gtk_tree_view_button_press (GtkWidget      *widget,
+       gboolean row_double_click = FALSE;
+       gboolean rtl;
+       gboolean node_selected;
++	  gboolean edits_allowed;
+ 
+       /* Empty tree? */
+       if (tree_view->priv->tree == NULL)
+@@ -2698,9 +2699,17 @@ gtk_tree_view_button_press (GtkWidget      *widget,
+ 
+       tree_view->priv->focus_column = column;
+ 
++      /* ARDOUR HACK */
++
++      if (g_object_get_data (G_OBJECT(tree_view), "mouse-edits-require-mod1")) {
++	      edits_allowed = (event->state & GDK_MOD1_MASK);
++      } else {
++	      /* regular GTK design: do edits if none of the default modifiers are active */
++	      edits_allowed = !(event->state & gtk_accelerator_get_default_mod_mask ());
++      }
++
+       /* decide if we edit */
+-      if (event->type == GDK_BUTTON_PRESS && event->button == 1 &&
+-	  !(event->state & gtk_accelerator_get_default_mod_mask ()))
++      if (event->type == GDK_BUTTON_PRESS && event->button == 1 && edits_allowed)
+ 	{
+ 	  GtkTreePath *anchor;
+ 	  GtkTreeIter iter;
