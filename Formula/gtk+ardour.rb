@@ -21,12 +21,11 @@ class Gtkxardour < Formula
  
 
 
-# patch do #includes gtkdkd-quartz.patch and GdkQuartzWindow.patch
-#   url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/ardour_gtk.diff"
-#   sha256 "1c04fe9e8aa8c8ed7ca5b1b1d35fcd4e47a7abf41be701902503648dda84852f" 
-# end
+patch do #includes gtkdkd-quartz.patch and GdkQuartzWindow.patch
+  url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/ardour+gtk.diff"
+  # sha256 "1c04fe9e8aa8c8ed7ca5b1b1d35fcd4e47a7abf41be701902503648dda84852f" 
+end
 
-# I'm not entirely sure how to get the gtk-osx.patch to work, or if I even need to tbh, lets see
 
 
 
