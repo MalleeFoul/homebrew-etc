@@ -1,7 +1,7 @@
 class Gtkxardour < Formula
   homepage 'http://gtk.org/'
-  url 'http://ftp.gnome.org/pub/gnome/sources/gtk+/2.24/gtk+-2.24.23.tar.xz'
-  sha256 'a0a406e27e9b5e7d6b2c4334212706ed5cdcd41e713e66c9ae950655dd61517c'
+  url 'http://ardour.org/files/deps/gtk+-2.24.23-quartz-ardour5.tar.bz2'
+  # sha256 'a0a406e27e9b5e7d6b2c4334212706ed5cdcd41e713e66c9ae950655dd61517c'
   keg_only "different version of Gtk+"
   desc "GUI toolkit"
 
@@ -21,10 +21,11 @@ class Gtkxardour < Formula
  
 
 
-patch do #includes gtkdkd-quartz.patch and GdkQuartzWindow.patch
-  url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/ardour+gtk.diff"
-  # sha256 "1c04fe9e8aa8c8ed7ca5b1b1d35fcd4e47a7abf41be701902503648dda84852f" 
-end
+# patch do #includes gtkdkd-quartz.patch and GdkQuartzWindow.patch
+#   url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/gtk%2Bardour.diff"
+#   sha256 "c57af68ae5d0fbbc847aa4cb657d79ef52778e71fdf7dbab783d02b79855c5c2" 
+# end
+# 
 
 
 
