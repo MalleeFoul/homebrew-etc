@@ -18,20 +18,13 @@ class Gtkxardour < Formula
   depends_on "libx11" => :build
   depends_on "gobject-introspection"
 
-  # patch :p2 do
-  #   url "https://github.com/Ardour/ardour/raw/master/tools/patches/gtk-osx.patch"
-  #   sha256 "3b67114cd3ac0510c5638b08f0b36c94a6932ebdf6fc630d8e5414f632ab8b78"
-  # end
+ 
 
-# patch do
-#   url "https://github.com/Ardour/ardour/raw/master/tools/patches/gtkdnd-quartz.patch"
-#   sha256 "b9bbdcd06302da0155534a9c5155b1c11b86834c700c504e635626defa181b00"
-# end
 
 patch do #includes gtkdkd-quartz.patch and GdkQuartzWindow.patch
-  url ""
+  url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/ardour_gtk.diff"
   sha256 "1ccfa44a09cddb450fe8fb3e19b271b8c64951cffbd0abd8c250438591617ead" 
-
+# I'm not entirely sure how to get the gtk-osx.patch to work, or if I even need to tbh, lets see
 
 
 
