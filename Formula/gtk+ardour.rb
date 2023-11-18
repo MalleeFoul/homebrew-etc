@@ -21,11 +21,11 @@ class Gtkxardour < Formula
  
 
 
-# patch do #includes gtkdkd-quartz.patch and GdkQuartzWindow.patch
-#   url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/gtk-ardour.diff"
+patch do #includes gtkdkd-quartz.patch and GdkQuartzWindow.patch
+  url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/ardour_gtk.diff"
 #   sha256 "c57af68ae5d0fbbc847aa4cb657d79ef52778e71fdf7dbab783d02b79855c5c2" 
-# end
-# 
+end
+
 
 # patch :p0 do #hello darkness my old friend
 #   url "https://github.com/Ardour/ardour/raw/master/tools/patches/gtkdnd-quartz.patch"
