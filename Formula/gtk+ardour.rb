@@ -27,7 +27,15 @@ class Gtkxardour < Formula
 # end
 # 
 
+patch :p0 do #hello darkness my old friend
+  url "https://github.com/Ardour/ardour/raw/master/tools/patches/gtkdnd-quartz.patch"
+  sha256 "b9bbdcd06302da0155534a9c5155b1c11b86834c700c504e635626defa181b00"
+end
 
+patch :p0 do
+  url "https://github.com/Ardour/ardour/raw/master/tools/patches/GdkQuartzWindow.patch"
+  sha256 "906b14f6f9a76f0f5f0932d8a4fc3e6c36e9dcd73a380c4f5e04ce6817351ca3"
+end
 
 
 
