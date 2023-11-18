@@ -1,7 +1,7 @@
 class Gtkxardour < Formula
-  homepage 'http://gtk.org/'
+  homepage "http://gtk.org/"
   url 'http://ardour.org/files/deps/gtk+-2.24.23-quartz-ardour5.tar.bz2'
-  # sha256 'a0a406e27e9b5e7d6b2c4334212706ed5cdcd41e713e66c9ae950655dd61517c'
+  sha256 "467ce1fb75d23b509efab6642fa0b4ada3984bc2618465daeb4ba1a0bc4ed87b"
   keg_only "different version of Gtk+"
   desc "GUI toolkit"
 
@@ -10,7 +10,7 @@ class Gtkxardour < Formula
   depends_on "glib"
   depends_on "jpeg"
   depends_on "libtiff"
-  depends_on "gdk-pixbuf"
+  depends_on "malleefoul/etc/gdk-pixbuf@2.31" => :build
   depends_on "pango"
   depends_on "jasper" => :optional
   depends_on "atk"
@@ -42,6 +42,7 @@ class Gtkxardour < Formula
   def install
     system "./configure", "--disable-dependency-tracking",
                           "--disable-silent-rules",
+                          "--with-included-loaders=yes",
                           "--prefix=#{prefix}",
                           "--enable-relocation",
                           "--with-gdktarget=quartz",
