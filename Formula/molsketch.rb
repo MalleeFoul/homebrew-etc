@@ -14,7 +14,7 @@ class Molsketch < Formula
   depends_on "open-babel" => :build
 
   def install
-    # ENV.deparallelize  # if your formula fails when building in parallel
+    end
     system "cmake", "-S", ".", "-B", "build", *std_cmake_args, "-DMSK_PREFIX='#{prefix}'"
     system "cmake", "--build", "build"
     system "cmake", "--install", "build"

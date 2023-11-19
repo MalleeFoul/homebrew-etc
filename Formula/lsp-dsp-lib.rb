@@ -9,7 +9,9 @@ class LspDspLib < Formula
   license ""
 
   # depends_on "cmake" => :build
-  depends_on "gnumake"
+  depends_on "make" => :build
+  depends_on "malleefoul/etc/lsp-common-lib" => :build
+  fails_with :clang
 
   def install
     # ENV.deparallelize  # if your formula fails when building in parallel
