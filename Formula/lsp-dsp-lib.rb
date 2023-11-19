@@ -9,6 +9,7 @@ class LspDspLib < Formula
   license ""
 
   depends_on "make" => :build
+  depends_on "gcc" => :build
   depends_on "malleefoul/etc/lsp-common-lib" => :build
   fails_with :clang
 
@@ -17,7 +18,7 @@ class LspDspLib < Formula
     # ENV.deparallelize  # if your formula fails when building in parallel
     # Remove unrecognized options if warned by configure
     # https://rubydoc.brew.sh/Formula.html#std_configure_args-instance_method
-    system "gmake", "config", "PREFIX=#{prefix}"
+    system "gmake", "config", "PREFIX=#{prefix}", "LSP_COMMON_LIB_PATH=#{Formula["lsp-common-lib"].prefix}"
     system "gmake"
     system "gmake", "install"
   end
@@ -35,6 +36,7 @@ class LspDspLib < Formula
     system "false"
   end
 end
+
 __END__
 diff --git a/make/tools.mk b/make/tools.mk
 index 393707f..c9c3806 100644
