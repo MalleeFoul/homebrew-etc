@@ -56,7 +56,7 @@ class Gtkxsilly < Formula
   end
 
   patch do
-    url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/ardour+gtk.diff"
+    url "https://raw.githubusercontent.com/MalleeFoul/homebrew-etc/main/patches/gtk%2Bardour.diff"
   end
   def backend
     backend = "quartz"
