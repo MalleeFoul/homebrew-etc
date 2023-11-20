@@ -40,6 +40,8 @@ class Gtkxsilly < Formula
     sha256 "35acd6aebc19843f1a2b3a63e880baceb0f5278ab1ace661e57a502d9d78c93c"
   end
 
+  # patch :DATA
+
   # Patch to allow Eiffel Studio to run in Cocoa / non-X11 mode, as well as Freeciv's freeciv-gtk2 client
   # See:
   # - https://gitlab.gnome.org/GNOME/gtk/-/issues/580
@@ -53,6 +55,9 @@ class Gtkxsilly < Formula
     sha256 "ce5adf1a019ac7ed2a999efb65cfadeae50f5de8663638c7f765f8764aa7d931"
   end
 
+  patch do
+    url "https://github.com/MalleeFoul/homebrew-etc/raw/main/patches/ardour+gtk.diff"
+  end
   def backend
     backend = "quartz"
     on_linux do
@@ -100,3 +105,51 @@ class Gtkxsilly < Formula
     system "./test"
   end
 end
+
+__END__
+diff --git a/gdk/quartz/GdkQuartzWindow.c b/gdk/quartz/GdkQuartzWindow.c
+index dabf051..5963660 100644
+--- a/gdk/quartz/GdkQuartzWindow.c
++++ b/gdk/quartz/GdkQuartzWindow.c
+@@ -617,7 +617,6 @@ update_context_from_dragging_info (id <NSDraggingInfo> sender)
+ - (void)draggedImage:(NSImage *)anImage endedAt:(NSPoint)aPoint operation:(NSDragOperation)operation
+ {
+   GdkEvent event;
+-  GdkScreen *screen;
+ 
+   g_assert (_gdk_quartz_drag_source_context != NULL);
+ 
+@@ -626,7 +625,7 @@ update_context_from_dragging_info (id <NSDraggingInfo> sender)
+   event.dnd.send_event = FALSE;
+   event.dnd.context = _gdk_quartz_drag_source_context;
+ 
+-  screen = gdk_window_get_screen (event.dnd.window);
++  GdkScreen* screen = gdk_window_get_screen (event.dnd.window);
+ 
+   if (screen)
+     {
+@@ -649,6 +648,7 @@ update_context_from_dragging_info (id <NSDraggingInfo> sender)
+           wh = gdk_window_get_height (win);
+ 
+           if (gx > wx && gy > wy && gx <= wx + ww && gy <= wy + wh)
++		  /* found a toplevel GdkWindow at the drop position */
+             event.dnd.context->dest_window = win;
+         }
+     }
+diff --git a/gtk/gtkdnd-quartz.c b/gtk/gtkdnd-quartz.c
+index 62b8570..74bdbc7 100644
+--- a/gtk/gtkdnd-quartz.c
++++ b/gtk/gtkdnd-quartz.c
+@@ -1926,7 +1926,11 @@ gtk_drag_source_info_destroy (GtkDragSourceInfo *info)
+ }
+ 
+ static gboolean
+-drag_drop_finished_idle_cb (gpointer data)
++    GtkDragSourceInfo* info = (GtkDragSourceInfo*) data;
++    if (info->success) 
++      {
++         gtk_drag_source_info_destroy (data);
++      }
+ {
+   GtkDragSourceInfo* info = (GtkDragSourceInfo*) data;
+ 
