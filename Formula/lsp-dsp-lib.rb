@@ -4,20 +4,20 @@
 class LspDspLib < Formula
   desc ""
   homepage ""
-  url "https://github.com/lsp-plugins/lsp-dsp-lib/releases/download/1.0.19/lsp-dsp-lib-src-1.0.19.tar.gz"
-  sha256 "541e3c50c10035985e98a9a4772dc76bf8588b7187747e1fa5cd2692d1ded28d"
+  url "https://github.com/lsp-plugins/lsp-dsp-lib/archive/refs/tags/1.0.19.tar.gz"
+  sha256 "54ee7781a7980b4a0b4fa800af4d54eac153298a13600dfe68a5d0102718c406"
   license ""
 
   depends_on "make" => :build
   depends_on "gcc" => :build
+  depends_on "pkg-config" => :build
+  # depends_on "llvm"
   depends_on "malleefoul/etc/lsp-common-lib" => :build
+
   fails_with :clang
 
   patch :DATA
   def install
-    # ENV.deparallelize  # if your formula fails when building in parallel
-    # Remove unrecognized options if warned by configure
-    # https://rubydoc.brew.sh/Formula.html#std_configure_args-instance_method
     system "gmake", "config", "PREFIX=#{prefix}", "LSP_COMMON_LIB_PATH=#{Formula["lsp-common-lib"].prefix}"
     system "gmake"
     system "gmake", "install"
