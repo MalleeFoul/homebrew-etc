@@ -5,7 +5,7 @@ class Gtkxsilly < Formula
   sha256 "ac2ac757f5942d318a311a54b0c80b5ef295f299c2a73c632f6bfb1ff49cc6da"
   license "LGPL-2.0-or-later"
   revision 1
-  conflicts_with "gtk+", because: "this is basically just my shitty modification of it, i suggest you uninstall it for the duration of using this"
+  conflicts_with "gtk+", because: "this is basically just my shitty modification of it"
 
   # From https://blog.gtk.org/2020/12/16/gtk-4-0/:
   # "It does mean, however, that GTK 2 has reached the end of its life.
@@ -56,9 +56,15 @@ class Gtkxsilly < Formula
   end
 
   patch do
-    url "https://raw.githubusercontent.com/MalleeFoul/homebrew-etc/main/patches/gtk%2Bskullfaceemoji.patch"
-    sha256 "0688932b53cc0485185243ba475062f1d19ef58021f1573f4c66ff86fa5e379d"
+    url "https://raw.githubusercontent.com/MalleeFoul/homebrew-etc/main/patches/gtk%2Bardour.diff"
+    sha256 "25efd01a3def6706a2c873919249dbd1315877e2b2128a02014846629f95cbac"
   end
+  
+  patch do
+    url "https://raw.githubusercontent.com/Homebrew/formula-patches/03cf8088210822aa2c1ab544ed58ea04c897d9c4/libtool/configure-big_sur.diff"
+    sha256 "35acd6aebc19843f1a2b3a63e880baceb0f5278ab1ace661e57a502d9d78c93c"
+  end
+  
   def backend
     backend = "quartz"
     on_linux do
