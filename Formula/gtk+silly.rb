@@ -5,7 +5,7 @@ class Gtkxsilly < Formula
   sha256 "ac2ac757f5942d318a311a54b0c80b5ef295f299c2a73c632f6bfb1ff49cc6da"
   license "LGPL-2.0-or-later"
   revision 1
-  conflicts_with "gtk+", because: "this is basically just my shitty modification of it"
+  conflicts_with "gtk+", because: "this is basically just my shitty modification of it, i suggest you uninstall it for the duration of using this"
 
   # From https://blog.gtk.org/2020/12/16/gtk-4-0/:
   # "It does mean, however, that GTK 2 has reached the end of its life.
