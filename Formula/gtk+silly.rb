@@ -51,20 +51,20 @@ class Gtkxsilly < Formula
   # - https://bugzilla.gnome.org/show_bug.cgi?id=557780
   # - Homebrew/homebrew-games#278
   patch do
-    url "https://gitlab.gnome.org/GNOME/gtk/uploads/2a194d81de8e8346a81816870264b3bf/gdkimage.patch"
+    url "https://gitlab.gnome.org/GNOME/gtk/uploads/2a194d81de8e8346a81816870264b3bf/gdkimage.diff"
     sha256 "ce5adf1a019ac7ed2a999efb65cfadeae50f5de8663638c7f765f8764aa7d931"
   end
 
   patch do
-    url "https://raw.githubusercontent.com/MalleeFoul/homebrew-etc/main/patches/gtk%2Bardour.diff"
-    sha256 "25efd01a3def6706a2c873919249dbd1315877e2b2128a02014846629f95cbac"
+    url "https://raw.githubusercontent.com/MalleeFoul/homebrew-etc/main/patches/gtk%2Bskullfaceemoji.diff"
+    sha256 "34b2497f4d2322f883a6a28f5a3ef3e5e09e948ca6e9cc8340bec8158a14d510"
   end
   
   patch do
     url "https://raw.githubusercontent.com/Homebrew/formula-patches/03cf8088210822aa2c1ab544ed58ea04c897d9c4/libtool/configure-big_sur.diff"
     sha256 "35acd6aebc19843f1a2b3a63e880baceb0f5278ab1ace661e57a502d9d78c93c"
   end
-  
+
   def backend
     backend = "quartz"
     on_linux do
