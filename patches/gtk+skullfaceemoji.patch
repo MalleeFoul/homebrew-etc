@@ -1,0 +1,1343 @@
+diff --git a/gdk/gdk.h b/gdk/gdk.h
+index 3f0b1ac..d5c05bd 100644
+--- a/gdk/gdk.h
++++ b/gdk/gdk.h
+@@ -237,5 +237,6 @@ guint    gdk_threads_add_timeout_seconds      (guint          interval,
+ 
+ G_END_DECLS
+ 
++#define ARDOUR_CANVAS_NSVIEW_TAG 0xa2d0c2c4
+ 
+ #endif /* __GDK_H__ */
+diff --git a/gdk/gdkevents.c b/gdk/gdkevents.c
+index 53833a0..0f8bba2 100644
+--- a/gdk/gdkevents.c
++++ b/gdk/gdkevents.c
+@@ -392,6 +392,8 @@ gdk_event_new (GdkEventType type)
+       new_event->scroll.y = 0.;
+       new_event->scroll.x_root = 0.;
+       new_event->scroll.y_root = 0.;
++      new_event->scroll.delta_x = 0.;
++      new_event->scroll.delta_y = 0.;
+       break;
+     case GDK_ENTER_NOTIFY:
+     case GDK_LEAVE_NOTIFY:
+@@ -845,6 +847,36 @@ gdk_event_get_root_coords (const GdkEvent *event,
+   return fetched;
+ }
+ 
++gboolean
++gdk_event_get_scroll_deltas (const GdkEvent *event,
++                             gdouble        *delta_x,
++                             gdouble        *delta_y)
++{
++  gboolean fetched = TRUE;
++  gdouble dx = 0.0;
++  gdouble dy = 0.0;
++
++  switch (event->type)
++    {
++    case GDK_SCROLL:
++      fetched = event->scroll.has_deltas;
++      dx = event->scroll.delta_x;
++      dy = event->scroll.delta_y;
++      break;
++    default:
++      fetched = FALSE;
++      break;
++    }
++
++  if (delta_x)
++    *delta_x = dx;
++
++  if (delta_y)
++    *delta_y = dy;
++
++  return fetched;
++}
++
+ /**
+  * gdk_event_get_axis:
+  * @event: a #GdkEvent
+diff --git a/gdk/gdkevents.h b/gdk/gdkevents.h
+index 0602bd0..f6b4e04 100644
+--- a/gdk/gdkevents.h
++++ b/gdk/gdkevents.h
+@@ -337,6 +337,9 @@ struct _GdkEventScroll
+   GdkScrollDirection direction;
+   GdkDevice *device;
+   gdouble x_root, y_root;
++  gboolean has_deltas;
++  gdouble delta_x;
++  gdouble delta_y;
+ };
+ 
+ struct _GdkEventKey
+@@ -537,6 +540,9 @@ gboolean  gdk_event_get_coords		(const GdkEvent  *event,
+ gboolean  gdk_event_get_root_coords	(const GdkEvent  *event,
+ 					 gdouble	 *x_root,
+ 					 gdouble	 *y_root);
++gboolean  gdk_event_get_scroll_deltas   (const GdkEvent *event,
++                                         gdouble         *delta_x,
++                                         gdouble         *delta_y);
+ gboolean  gdk_event_get_axis            (const GdkEvent  *event,
+                                          GdkAxisUse       axis_use,
+                                          gdouble         *value);
+diff --git a/gdk/gdkwindow.c b/gdk/gdkwindow.c
+index f6e2acc..9a978e2 100644
+--- a/gdk/gdkwindow.c
++++ b/gdk/gdkwindow.c
+@@ -117,7 +117,9 @@
+  * remove a custom clip region.
+  */
+ 
++#ifndef __APPLE__
+ #define USE_BACKING_STORE	/* Appears to work on Win32, too, now. */
++#endif
+ 
+ /* This adds a local value to the GdkVisibilityState enum */
+ #define GDK_VISIBILITY_NOT_VIEWABLE 3
+@@ -5469,6 +5471,15 @@ _gdk_window_process_updates_recurse (GdkWindow *window,
+ 	{
+ 	  GdkEvent event;
+ 
++#ifdef __APPLE__
++	  /* we no longer double-buffer on macOS/quartz, but double-buffering has seeped
++	     into GTK sufficiently that several widgets rely on the background paint that
++	     gdk_window_begin_paint_region() would do. So here we sort-of-explicitly paint
++	     the window directly to provide the same starting point for the window drawing
++	     that will take place as the expose is processed.
++	  */
++	  gdk_window_clear_region_internal (window, expose_region, FALSE);
++#endif
+ 	  event.expose.type = GDK_EXPOSE;
+ 	  event.expose.window = g_object_ref (window);
+ 	  event.expose.send_event = FALSE;
+@@ -10852,6 +10863,9 @@ proxy_button_event (GdkEvent *source_event,
+       event->scroll.y_root = source_event->scroll.y_root;
+       event->scroll.state = state;
+       event->scroll.device = source_event->scroll.device;
++      event->scroll.has_deltas = source_event->scroll.has_deltas;
++      event->scroll.delta_x = source_event->scroll.delta_x;
++      event->scroll.delta_y = source_event->scroll.delta_y;
+       return TRUE;
+ 
+     default:
+diff --git a/gdk/quartz/GdkQuartzView.c b/gdk/quartz/GdkQuartzView.c
+index 368e040..8b37f27 100644
+--- a/gdk/quartz/GdkQuartzView.c
++++ b/gdk/quartz/GdkQuartzView.c
+@@ -618,7 +618,7 @@
+   if (NSEqualRects (rect, NSZeroRect))
+     return;
+ 
+-  if (!GDK_WINDOW_IS_MAPPED (gdk_window))
++  if (!GDK_WINDOW_IS_MAPPED (gdk_window) && ((gdk_quartz_osx_version() >= GDK_OSX_LEOPARD) && [self wantsLayer]))
+     {
+       /* If the window is not yet mapped, clip_region_with_children
+        * will be empty causing the usual code below to draw nothing.
+@@ -629,7 +629,14 @@
+        */
+       [NSGraphicsContext saveGraphicsState];
+ 
+-      [[NSColor windowBackgroundColor] setFill];
++      if (impl->background_color_set)
++        [[NSColor colorWithDeviceRed:impl->background_color.red / 65535.0
++                               green:impl->background_color.green / 65535.0
++                                blue:impl->background_color.blue / 65535.0
++                               alpha:1.0]
++         setFill];
++      else
++        [[NSColor windowBackgroundColor] setFill];
+       [NSBezierPath fillRect: rect];
+ 
+       [NSGraphicsContext restoreGraphicsState];
+diff --git a/gdk/quartz/gdkdrawable-quartz.c b/gdk/quartz/gdkdrawable-quartz.c
+index 6707071..bbc5337 100644
+--- a/gdk/quartz/gdkdrawable-quartz.c
++++ b/gdk/quartz/gdkdrawable-quartz.c
+@@ -835,51 +835,6 @@ gdk_quartz_drawable_get_context (GdkDrawable *drawable,
+   return GDK_DRAWABLE_IMPL_QUARTZ_GET_CLASS (drawable)->get_context (drawable, antialias);
+ }
+ 
+-/* Help preventing "beam sync penalty" where CG makes all graphics code
+- * block until the next vsync if we try to flush (including call display on
+- * a view) too often. We do this by limiting the manual flushing done
+- * outside of expose calls to less than some frequency when measured over
+- * the last 4 flushes. This is a bit arbitray, but seems to make it possible
+- * for some quick manual flushes (such as gtkruler or gimp's marching ants)
+- * without hitting the max flush frequency.
+- *
+- * If drawable NULL, no flushing is done, only registering that a flush was
+- * done externally.
+- */
+-void
+-_gdk_quartz_drawable_flush (GdkDrawable *drawable)
+-{
+-  static struct timeval prev_tv;
+-  static gint intervals[4];
+-  static gint index;
+-  struct timeval tv;
+-  gint ms;
+-
+-  gettimeofday (&tv, NULL);
+-  ms = (tv.tv_sec - prev_tv.tv_sec) * 1000 + (tv.tv_usec - prev_tv.tv_usec) / 1000;
+-  intervals[index++ % 4] = ms;
+-
+-  if (drawable)
+-    {
+-      ms = intervals[0] + intervals[1] + intervals[2] + intervals[3];
+-
+-      /* ~25Hz on average. */
+-      if (ms > 4*40)
+-        {
+-          if (GDK_IS_WINDOW_IMPL_QUARTZ (drawable))
+-            {
+-              GdkWindowImplQuartz *window_impl = GDK_WINDOW_IMPL_QUARTZ (drawable);
+-
+-              [window_impl->toplevel flushWindow];
+-            }
+-
+-          prev_tv = tv;
+-        }
+-    }
+-  else
+-    prev_tv = tv;
+-}
+-
+ void
+ gdk_quartz_drawable_release_context (GdkDrawable  *drawable, 
+ 				     CGContextRef  cg_context)
+@@ -897,7 +852,6 @@ gdk_quartz_drawable_release_context (GdkDrawable  *drawable,
+       /* See comment in gdk_quartz_drawable_get_context(). */
+       if (window_impl->in_paint_rect_count == 0)
+         {
+-          _gdk_quartz_drawable_flush (drawable);
+           [window_impl->view unlockFocus];
+         }
+     }
+diff --git a/gdk/quartz/gdkevents-quartz.c b/gdk/quartz/gdkevents-quartz.c
+index f199298..b25490a 100644
+--- a/gdk/quartz/gdkevents-quartz.c
++++ b/gdk/quartz/gdkevents-quartz.c
+@@ -43,6 +43,9 @@
+      GDK_WINDOW_TYPE (window) != GDK_WINDOW_FOREIGN &&  \
+      GDK_WINDOW_TYPE (window) != GDK_WINDOW_OFFSCREEN)
+ 
++/* This is the NSView not owned by GDK where a mouse down event occurs */
++static NSView *foreign_mouse_down_view;
++
+ /* This is the window corresponding to the key window */
+ static GdkWindow   *current_keyboard_window;
+ 
+@@ -726,6 +729,27 @@ find_window_for_ns_event (NSEvent *nsevent,
+   NSPoint screen_point;
+   NSEventType event_type;
+ 
++  event_type = [nsevent type];
++
++  if (foreign_mouse_down_view) {
++	  switch (event_type) {
++	  case NSLeftMouseUp:
++	  case NSRightMouseUp:
++	  case NSOtherMouseUp:
++		  /* mouse up happened, foreign view needs to handle it
++		     but we will also assume that it does (e.g. ends
++		     a drag and whatever goes with it) and so we reset
++		     foreign_mouse_down_view.
++		  */
++		  foreign_mouse_down_view = 0;
++		  return NULL;
++
++	  default:
++		  /* foreign view needs to handle this */
++		  return NULL;
++	  }
++  }
++
+   view = (GdkQuartzView *)[[nsevent window] contentView];
+ 
+   toplevel = get_toplevel_from_ns_event (nsevent, &screen_point, x, y);
+@@ -733,7 +757,6 @@ find_window_for_ns_event (NSEvent *nsevent,
+     return NULL;
+   _gdk_quartz_window_nspoint_to_gdk_xy (screen_point, x_root, y_root);
+ 
+-  event_type = [nsevent type];
+ 
+   switch (event_type)
+     {
+@@ -841,6 +864,37 @@ find_window_for_ns_event (NSEvent *nsevent,
+                 toplevel_private = (GdkWindowObject *)toplevel;
+                 toplevel_impl = (GdkWindowImplQuartz *)toplevel_private->impl;
+ 
++		{
++			unsigned int subviews = [[toplevel_impl->view subviews] count];
++			unsigned int si;
++			
++			for (si = 0; si < subviews; ++si) {
++				NSView* sv = [[toplevel_impl->view subviews] objectAtIndex:si];
++				if ([sv tag] == ARDOUR_CANVAS_NSVIEW_TAG)
++				  {
++				     continue;
++				  }
++ 				NSRect r = [sv frame];
++				if (r.origin.x <= *x && r.origin.x + r.size.width >= *x &&
++				    r.origin.y <= *y && r.origin.y + r.size.height >= *y) {
++					/* event is within subview, forward back to Cocoa */
++
++					switch (event_type)
++					  {
++					      case NSLeftMouseDown:
++					      case NSRightMouseDown:
++					      case NSOtherMouseDown:
++					 	 foreign_mouse_down_view = sv;
++						 break;
++					      default:
++						 break;
++					  }
++
++					return NULL;
++				}
++			}
++		}
++
+                 *x = x_tmp;
+                 *y = y_tmp;
+               }
+@@ -961,6 +1015,23 @@ fill_motion_event (GdkWindow *window,
+                    gint       x_root,
+                    gint       y_root)
+ {
++  GdkModifierType state;
++
++  state = get_keyboard_modifiers_from_ns_event (nsevent);
++
++  switch ([nsevent type])
++    {
++    case NSLeftMouseDragged:
++    case NSRightMouseDragged:
++    case NSOtherMouseDragged:
++      state |= get_mouse_button_modifiers_from_ns_event (nsevent);
++      break;
++
++    case NSMouseMoved:
++    default:
++      break;
++    }
++
+   event->any.type = GDK_MOTION_NOTIFY;
+   event->motion.window = window;
+   event->motion.time = get_time_from_ns_event (nsevent);
+@@ -983,6 +1054,9 @@ fill_scroll_event (GdkWindow          *window,
+                    gint                y,
+                    gint                x_root,
+                    gint                y_root,
++                   gboolean            has_deltas,
++                   gdouble             delta_x,
++                   gdouble             delta_y,
+                    GdkScrollDirection  direction)
+ {
+   GdkWindowObject *private;
+@@ -1002,6 +1076,9 @@ fill_scroll_event (GdkWindow          *window,
+   event->scroll.state = get_keyboard_modifiers_from_ns_event (nsevent);
+   event->scroll.direction = direction;
+   event->scroll.device = _gdk_display->core_pointer;
++  event->scroll.has_deltas = has_deltas;
++  event->scroll.delta_x = delta_x;
++  event->scroll.delta_y = delta_y;
+ }
+ 
+ static void
+@@ -1074,13 +1151,6 @@ fill_key_event (GdkWindow    *window,
+     }
+ 
+   event->key.state |= _gdk_quartz_events_get_current_mouse_modifiers ();
+-
+-  /* The X11 backend adds the first virtual modifier MOD2..MOD5 are
+-   * mapped to. Since we only have one virtual modifier in the quartz
+-   * backend, calling the standard function will do.
+-   */
+-  gdk_keymap_add_virtual_modifiers (NULL, &event->key.state);
+-
+   event->key.string = NULL;
+ 
+   /* Fill in ->string since apps depend on it, taken from the x11 backend. */
+@@ -1489,29 +1559,64 @@ gdk_event_translate (GdkEvent *event,
+ 
+     case NSScrollWheel:
+       {
+-	float dx = [nsevent deltaX];
+-	float dy = [nsevent deltaY];
+-	GdkScrollDirection direction;
+-
+-        if (dy != 0)
+-          {
+-            if (dy < 0.0)
+-              direction = GDK_SCROLL_DOWN;
+-            else
+-              direction = GDK_SCROLL_UP;
++	        GdkScrollDirection direction;
++	float dx;
++	float dy;
+ 
+-            fill_scroll_event (window, event, nsevent, x, y, x_root, y_root, direction);
+-          }
++#if GTK_OSX_MIN >= 7
++	if (gdk_quartz_osx_version() >= GDK_OSX_LION &&
++	    [nsevent hasPreciseScrollingDeltas])
++	  {
++	    dx = [nsevent scrollingDeltaX];
++	    dy = [nsevent scrollingDeltaY];
+ 
+-        if (dx != 0)
+-          {
+-            if (dx < 0.0)
+-              direction = GDK_SCROLL_RIGHT;
++            if (fabs (dy) > fabs (dx))
++              {
++                if (dy < 0.0)
++                  direction = GDK_SCROLL_DOWN;
++                else
++                  direction = GDK_SCROLL_UP;
++              }
+             else
+-              direction = GDK_SCROLL_LEFT;
++              {
++                if (dx < 0.0)
++                  direction = GDK_SCROLL_RIGHT;
++                else
++                  direction = GDK_SCROLL_LEFT;
++              }
++
++            fill_scroll_event (window, event, nsevent, x, y, x_root, y_root,
++                               TRUE, -dx, -dy, direction);
++	  }
++	else
++	  {
++#endif /* earlier than Lion */
++	    dx = [nsevent deltaX];
++	    dy = [nsevent deltaY];
++
++            if (dy != 0.0)
++              {
++                if (dy < 0.0)
++                  direction = GDK_SCROLL_DOWN;
++                else
++                  direction = GDK_SCROLL_UP;
+ 
+-            fill_scroll_event (window, event, nsevent, x, y, x_root, y_root, direction);
++                fill_scroll_event (window, event, nsevent, x, y, x_root, y_root,
++                                   FALSE, 0.0, fabs (dy), direction);
++              }
++            else if (dx != 0.0)
++              {
++                if (dx < 0.0)
++                  direction = GDK_SCROLL_RIGHT;
++                else
++                  direction = GDK_SCROLL_LEFT;
++
++                fill_scroll_event (window, event, nsevent, x, y, x_root, y_root,
++                                   FALSE, fabs (dx), 0.0, direction);
++              }
++#if GTK_OSX_MIN >= 7
+           }
++#endif
+       }
+       break;
+ 
+diff --git a/gdk/quartz/gdkgc-quartz.c b/gdk/quartz/gdkgc-quartz.c
+index 6a8968b..bf2ffed 100644
+--- a/gdk/quartz/gdkgc-quartz.c
++++ b/gdk/quartz/gdkgc-quartz.c
+@@ -292,7 +292,10 @@ _gdk_windowing_gc_set_clip_region (GdkGC           *gc,
+       private->have_clip_mask = FALSE;
+     }
+ 
+-  private->have_clip_region = region != NULL;
++  if (region == NULL || gdk_region_empty (region))
++     private->have_clip_region = FALSE;
++  else
++     private->have_clip_region = TRUE;
+ 
+   if (reset_origin)
+     {
+diff --git a/gdk/quartz/gdkimage-quartz.c b/gdk/quartz/gdkimage-quartz.c
+index 493efba..39ba2e1 100644
+--- a/gdk/quartz/gdkimage-quartz.c
++++ b/gdk/quartz/gdkimage-quartz.c
+@@ -145,6 +145,9 @@ _gdk_quartz_image_copy_to_image (GdkDrawable *drawable,
+ 
+       if (GDK_WINDOW_IMPL_QUARTZ (drawable) == GDK_WINDOW_IMPL_QUARTZ (GDK_WINDOW_OBJECT (_gdk_root)->impl))
+         {
++#if MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_4
++          return image;
++#else
+           /* Special case for the root window. */
+ 	  CGRect rect = CGRectMake (src_x, src_y, width, height);
+           CGImageRef root_image_ref = CGWindowListCreateImage (rect,
+@@ -170,6 +173,7 @@ _gdk_quartz_image_copy_to_image (GdkDrawable *drawable,
+ 
+           rep = [[NSBitmapImageRep alloc] initWithCGImage: root_image_ref];
+           CGImageRelease (root_image_ref);
++#endif
+         }
+       else
+         {
+diff --git a/gdk/quartz/gdkprivate-quartz.h b/gdk/quartz/gdkprivate-quartz.h
+index b78c353..8c09fcb 100644
+--- a/gdk/quartz/gdkprivate-quartz.h
++++ b/gdk/quartz/gdkprivate-quartz.h
+@@ -202,7 +202,6 @@ void         _gdk_quartz_synthesize_null_key_event (GdkWindow *window);
+ 
+ /* Drawable */
+ void        _gdk_quartz_drawable_finish (GdkDrawable *drawable);
+-void        _gdk_quartz_drawable_flush  (GdkDrawable *drawable);
+ 
+ /* Geometry */
+ void        _gdk_quartz_window_scroll      (GdkWindow       *window,
+diff --git a/gdk/quartz/gdkwindow-quartz.c b/gdk/quartz/gdkwindow-quartz.c
+index ab5d7c2..fc66497 100644
+--- a/gdk/quartz/gdkwindow-quartz.c
++++ b/gdk/quartz/gdkwindow-quartz.c
+@@ -30,9 +30,6 @@
+ 
+ static gpointer parent_class;
+ 
+-static GSList   *update_nswindows;
+-static gboolean  in_process_all_updates = FALSE;
+-
+ static GSList *main_window_stack;
+ 
+ #define FULLSCREEN_DATA "fullscreen-data"
+@@ -106,8 +103,8 @@ gdk_window_impl_quartz_get_context (GdkDrawable *drawable,
+    */
+   if (window_impl->in_paint_rect_count == 0)
+     {
+-      if (![window_impl->view lockFocusIfCanDraw])
+-        return NULL;
++      // if (![window_impl->view lockFocusIfCanDraw])
++      //   return NULL;
+     }
+   if (gdk_quartz_osx_version () < GDK_OSX_YOSEMITE)
+        cg_context = [[NSGraphicsContext currentContext] graphicsPort];
+@@ -230,144 +227,49 @@ gdk_window_impl_quartz_init (GdkWindowImplQuartz *impl)
+ }
+ 
+ static void
+-gdk_window_impl_quartz_begin_paint_region (GdkPaintable    *paintable,
+-                                           GdkWindow       *window,
+-					   const GdkRegion *region)
+-{
+-  GdkWindowImplQuartz *impl = GDK_WINDOW_IMPL_QUARTZ (paintable);
+-  GdkWindowObject *private = (GdkWindowObject*)window;
+-  int n_rects;
+-  GdkRectangle *rects = NULL;
+-  GdkPixmap *bg_pixmap;
+-  GdkRegion *clipped_and_offset_region;
+-  gboolean free_clipped_and_offset_region = TRUE;
+-
+-  bg_pixmap = private->bg_pixmap;
+-
+-  clipped_and_offset_region = gdk_region_copy (region);
+-
+-  gdk_region_intersect (clipped_and_offset_region,
+-                        private->clip_region_with_children);
+-  gdk_region_offset (clipped_and_offset_region,
+-                     private->abs_x, private->abs_y);
+-
+-  if (impl->begin_paint_count == 0)
+-    {
+-      impl->paint_clip_region = clipped_and_offset_region;
+-      free_clipped_and_offset_region = FALSE;
+-    }
+-  else
+-    gdk_region_union (impl->paint_clip_region, clipped_and_offset_region);
+-
+-  impl->begin_paint_count++;
+-
+-  if (bg_pixmap == GDK_NO_BG)
+-    goto done;
+-
+-  gdk_region_get_rectangles (clipped_and_offset_region, &rects, &n_rects);
+-
+-  if (n_rects == 0)
+-    goto done;
+-
+-  if (bg_pixmap == NULL)
+-    {
+-      CGContextRef cg_context;
+-      CGColorRef color;
+-      gint i;
+-
+-      cg_context = gdk_quartz_drawable_get_context (GDK_DRAWABLE (impl), FALSE);
+-
+-      if (!cg_context)
+-        goto done;
+-
+-      color = _gdk_quartz_colormap_get_cgcolor_from_pixel (window,
+-                                                           private->bg_color.pixel);
+-      CGContextSetFillColorWithColor (cg_context, color);
+-      CGColorRelease (color);
+- 
+-      for (i = 0; i < n_rects; i++)
+-        {
+-          CGContextFillRect (cg_context,
+-                             CGRectMake (rects[i].x, rects[i].y,
+-                                         rects[i].width, rects[i].height));
+-        }
+-
+-      gdk_quartz_drawable_release_context (GDK_DRAWABLE (impl), cg_context);
+-    }
+-  else
+-    {
+-      int x, y;
+-      int x_offset, y_offset;
+-      int width, height;
+-      GdkGC *gc;
+-
+-      x_offset = y_offset = 0;
+-
+-      while (window && bg_pixmap == GDK_PARENT_RELATIVE_BG)
+-        {
+-          /* If this window should have the same background as the parent,
+-           * fetch the parent. (And if the same goes for the parent, fetch
+-           * the grandparent, etc.)
+-           */
+-          x_offset += ((GdkWindowObject *) window)->x;
+-          y_offset += ((GdkWindowObject *) window)->y;
+-          window = GDK_WINDOW (((GdkWindowObject *) window)->parent);
+-          bg_pixmap = ((GdkWindowObject *) window)->bg_pixmap;
+-        }
+-
+-      if (bg_pixmap == NULL || bg_pixmap == GDK_NO_BG || bg_pixmap == GDK_PARENT_RELATIVE_BG)
+-        {
+-          /* Parent relative background but the parent doesn't have a
+-           * pixmap.
+-           */ 
+-          goto done;
+-        }
++_gdk_window_quartz_clear_region (GdkWindow *window, const GdkRegion* region, bool ignored)
++{
++  if (gdk_drawable_get_colormap (window) != gdk_screen_get_rgba_colormap (_gdk_screen)) {
++
++	  /* Window is opaque. We no longer use backing store on Quartz, so the code that fill the backing store with the background
++	   * color is no longer in use. We do that here, if there is a background color.
++	   */
++
++	  GdkWindowObject *private = GDK_WINDOW_OBJECT(window);
++	  GdkWindowImplQuartz *impl = GDK_WINDOW_IMPL_QUARTZ (private->impl);
++
++	  GdkColor bg_color = private->bg_color;
++	  CGContextRef cg_context = [[NSGraphicsContext currentContext] graphicsPort];
++	  CGContextSaveGState (cg_context);
++
++	  if (g_getenv ("GDK_HARLEQUIN_DEBUGGING")) {
++		  CGContextSetRGBFillColor (cg_context,
++		                            (random() % 65535) / 65335.0,
++		                            (random() % 65535) / 65335.0,
++		                            (random() % 65535) / 65335.0,
++		                            1.0);
++	  } else {
++		  CGContextSetRGBFillColor (cg_context,
++		                            bg_color.red / 65335.0,
++		                            bg_color.green / 65335.0,
++		                            bg_color.blue / 65335.0,
++		                            1.0);
++	  }
+ 
+-      /* Note: There should be a CG API to draw tiled images, we might
+-       * want to look into that for this. 
+-       */
+-      gc = gdk_gc_new (GDK_DRAWABLE (impl));
++      GdkRectangle *rects;
++      gint n_rects, i;
+ 
+-      gdk_drawable_get_size (GDK_DRAWABLE (bg_pixmap), &width, &height);
++	  gdk_region_get_rectangles (region, &rects, &n_rects);
+ 
+-      x = -x_offset;
+-      while (x < (rects[0].x + rects[0].width))
+-        {
+-          if (x + width >= rects[0].x)
+-	    {
+-              y = -y_offset;
+-              while (y < (rects[0].y + rects[0].height))
+-                {
+-                  if (y + height >= rects[0].y)
+-                    gdk_draw_drawable (GDK_DRAWABLE (impl), gc, bg_pixmap, 0, 0, x, y, width, height);
+-		  
+-                  y += height;
+-                }
+-            }
+-          x += width;
+-        }
++	  for (i = 0; i < n_rects; i++)
++	  {
++		  CGRect cg_rect = CGRectMake (rects[i].x + 0.5, rects[i].y + 0.5, rects[i].width, rects[i].height);
+ 
+-      g_object_unref (gc);
++		  CGContextFillRect (cg_context, cg_rect);
+     }
+ 
+- done:
+-  if (free_clipped_and_offset_region)
+-    gdk_region_destroy (clipped_and_offset_region);
+-  g_free (rects);
+-}
+-
+-static void
+-gdk_window_impl_quartz_end_paint (GdkPaintable *paintable)
+-{
+-  GdkWindowImplQuartz *impl = GDK_WINDOW_IMPL_QUARTZ (paintable);
+-
+-  impl->begin_paint_count--;
+-
+-  if (impl->begin_paint_count == 0)
+-    {
+-      gdk_region_destroy (impl->paint_clip_region);
+-      impl->paint_clip_region = NULL;
+-    }
++	  CGContextRestoreGState (cg_context);
++  }
+ }
+ 
+ void
+@@ -422,87 +324,20 @@ void
+ _gdk_windowing_window_process_updates_recurse (GdkWindow *window,
+                                                GdkRegion *region)
+ {
+-  /* Make sure to only flush each toplevel at most once if we're called
+-   * from process_all_updates.
+-   */
+-  if (in_process_all_updates)
+-    {
+-      GdkWindow *toplevel;
+-
+-      toplevel = gdk_window_get_effective_toplevel (window);
+-      if (toplevel && WINDOW_IS_TOPLEVEL (toplevel))
+-        {
+-          GdkWindowObject *toplevel_private;
+-          GdkWindowImplQuartz *toplevel_impl;
+-          NSWindow *nswindow;
+-
+-          toplevel_private = (GdkWindowObject *)toplevel;
+-          toplevel_impl = (GdkWindowImplQuartz *)toplevel_private->impl;
+-          nswindow = toplevel_impl->toplevel;
+-
+-          /* In theory, we could skip the flush disabling, since we only
+-           * have one NSView.
+-           */
+-          if (nswindow && ![nswindow isFlushWindowDisabled]) 
+-            {
+-              [nswindow retain];
+-              [nswindow disableFlushWindow];
+-              update_nswindows = g_slist_prepend (update_nswindows, nswindow);
+-            }
+-        }
+-    }
+-
+   if (WINDOW_IS_TOPLEVEL (window))
+     _gdk_quartz_window_set_needs_display_in_region (window, region);
+   else
+     _gdk_window_process_updates_recurse (window, region);
+-
+-  /* NOTE: I'm not sure if we should displayIfNeeded here. It slows down a
+-   * lot (since it triggers the beam syncing) and things seem to work
+-   * without it.
+-   */
+ }
+ 
+ void
+ _gdk_windowing_before_process_all_updates (void)
+ {
+-  in_process_all_updates = TRUE;
+-
+-  NSDisableScreenUpdates ();
+ }
+ 
+ void
+ _gdk_windowing_after_process_all_updates (void)
+ {
+-  GSList *old_update_nswindows = update_nswindows;
+-  GSList *tmp_list = update_nswindows;
+-
+-  update_nswindows = NULL;
+-
+-  while (tmp_list)
+-    {
+-      NSWindow *nswindow = tmp_list->data;
+-
+-      [[nswindow contentView] displayIfNeeded];
+-
+-      _gdk_quartz_drawable_flush (NULL);
+-
+-      /* 10.14 needs to be told that the view needs to be redrawn, see
+-       * https://gitlab.gnome.org/GNOME/gtk/issues/1479 */
+-      if (gdk_quartz_osx_version() >= GDK_OSX_MOJAVE)
+-           [[nswindow contentView] setNeedsDisplay:YES];
+-      [nswindow enableFlushWindow];
+-      [nswindow flushWindow];
+-      [nswindow release];
+-
+-      tmp_list = tmp_list->next;
+-    }
+-
+-  g_slist_free (old_update_nswindows);
+-
+-  in_process_all_updates = FALSE;
+-
+-  NSEnableScreenUpdates ();
+ }
+ 
+ static void
+@@ -532,14 +367,7 @@ _gdk_window_impl_quartz_get_type (void)
+ 	  (GInstanceInitFunc) gdk_window_impl_quartz_init,
+ 	};
+ 
+-      const GInterfaceInfo paintable_info = 
+-	{
+-	  (GInterfaceInitFunc) gdk_window_impl_quartz_paintable_init,
+-	  NULL,
+-	  NULL
+-	};
+-
+-      const GInterfaceInfo window_impl_info = 
++const GInterfaceInfo window_impl_info =
+ 	{
+ 	  (GInterfaceInitFunc) gdk_window_impl_iface_init,
+ 	  NULL,
+@@ -549,9 +377,7 @@ _gdk_window_impl_quartz_get_type (void)
+       object_type = g_type_register_static (GDK_TYPE_DRAWABLE_IMPL_QUARTZ,
+                                             "GdkWindowImplQuartz",
+                                             &object_info, 0);
+-      g_type_add_interface_static (object_type,
+-				   GDK_TYPE_PAINTABLE,
+-				   &paintable_info);
++
+       g_type_add_interface_static (object_type,
+ 				   GDK_TYPE_WINDOW_IMPL,
+ 				   &window_impl_info);
+@@ -1757,6 +1583,22 @@ gdk_window_quartz_set_back_pixmap (GdkWindow *window,
+   /* FIXME: Could theoretically set some background image here. (Currently
+    * the back pixmap is drawn before emitting expose events.
+    */
++  GdkWindowImplQuartz *impl;
++  GdkWindowObject *private;
++
++  if (GDK_WINDOW_DESTROYED (window))
++    return;
++
++  private = GDK_WINDOW_OBJECT (window);
++  impl = GDK_WINDOW_IMPL_QUARTZ (private->impl);
++
++  if (color)
++    {
++      impl->background_color = *color;
++      impl->background_color_set = TRUE;
++    }
++  else
++    impl->background_color_set = FALSE;
+ }
+ 
+ static void
+@@ -3025,6 +2867,12 @@ gdk_window_fullscreen (GdkWindow *window)
+       clear_toplevel_order ();
+     }
+ 
++  if ([NSWindow respondsToSelector:@selector(toggleFullScreen:)])
++    {
++       [impl->toplevel toggleFullScreen:nil];
++    }
++  else
++    {
+   if ([NSWindow respondsToSelector:@selector(toggleFullScreen:)])
+     {
+        [impl->toplevel toggleFullScreen:nil];
+@@ -3033,6 +2881,7 @@ gdk_window_fullscreen (GdkWindow *window)
+     {
+       SetSystemUIMode (kUIModeAllHidden, kUIOptionAutoShowMenuBar);
+     }
++    }
+ 
+   gdk_synthesize_window_state (window, 0, GDK_WINDOW_STATE_FULLSCREEN);
+ }
+@@ -3051,6 +2900,12 @@ gdk_window_unfullscreen (GdkWindow *window)
+   geometry = get_fullscreen_geometry (window);
+   if (geometry)
+     {
++      if ([NSWindow respondsToSelector:@selector(toggleFullScreen:)])
++        {
++          [impl->toplevel toggleFullScreen:nil];
++        }
++      else
++        {
+       if ([NSWindow respondsToSelector:@selector(toggleFullScreen:)])
+         {
+           [impl->toplevel toggleFullScreen:nil];
+@@ -3059,6 +2914,7 @@ gdk_window_unfullscreen (GdkWindow *window)
+         {
+ 	  SetSystemUIMode (kUIModeNormal, 0);
+ 	}
++	}
+ 
+       move_resize_window_internal (window,
+                                    geometry->x,
+diff --git a/gdk/quartz/gdkwindow-quartz.h b/gdk/quartz/gdkwindow-quartz.h
+index 4a0e27a..ed9dfe3 100644
+--- a/gdk/quartz/gdkwindow-quartz.h
++++ b/gdk/quartz/gdkwindow-quartz.h
+@@ -60,6 +60,10 @@ struct _GdkWindowImplQuartz
+   GList *sorted_children;
+ 
+   GdkRegion *needs_display_region;
++
++  GdkColor background_color;
++
++  guint background_color_set : 1;
+ };
+  
+ struct _GdkWindowImplQuartzClass 
+diff --git a/gtk/gtkaccellabel.c b/gtk/gtkaccellabel.c
+index e0482b1..8aee928 100644
+--- a/gtk/gtkaccellabel.c
++++ b/gtk/gtkaccellabel.c
+@@ -703,7 +703,12 @@ _gtk_accel_label_class_get_accelerator_label (GtkAccelLabelClass *klass,
+       if (seen_mod)
+ 	g_string_append (gstring, klass->mod_separator);
+ 
++#ifndef GDK_WINDOWING_QUARTZ
+       g_string_append (gstring, "Mod2");
++#else
++      /* Command key symbol U+2318 PLACE OF INTEREST SIGN */
++      g_string_append (gstring, "\xe2\x8c\x98");
++#endif
+       seen_mod = TRUE;
+     }
+   if (accelerator_mods & GDK_MOD3_MASK)
+@@ -761,17 +766,8 @@ _gtk_accel_label_class_get_accelerator_label (GtkAccelLabelClass *klass,
+       if (seen_mod)
+ 	g_string_append (gstring, klass->mod_separator);
+ 
+-#ifndef GDK_WINDOWING_QUARTZ
+-      /* This is the text that should appear next to menu accelerators
+-       * that use the meta key. If the text on this key isn't typically
+-       * translated on keyboards used for your language, don't translate
+-       * this.
+-       */
++
+       g_string_append (gstring, C_("keyboard label", "Meta"));
+-#else
+-      /* Command key symbol U+2318 PLACE OF INTEREST SIGN */
+-      g_string_append (gstring, "\xe2\x8c\x98");
+-#endif
+       seen_mod = TRUE;
+     }
+   if (seen_mod)
+diff --git a/gtk/gtkclipboard-quartz.c b/gtk/gtkclipboard-quartz.c
+index 29b2665..f931f42 100644
+--- a/gtk/gtkclipboard-quartz.c
++++ b/gtk/gtkclipboard-quartz.c
+@@ -25,6 +25,15 @@
+ 
+ #import <Cocoa/Cocoa.h>
+ 
++/* NSInteger only exists in Leopard and newer.  This check has to be
++ * done after inclusion of the system headers.  If NSInteger has not
++ * been defined, we know for sure that we are on 32-bit.
++ */
++#ifndef NSINTEGER_DEFINED
++typedef int NSInteger;
++typedef unsigned int NSUInteger;
++#endif
++
+ #include "gtkclipboard.h"
+ #include "gtkinvisible.h"
+ #include "gtkmain.h"
+diff --git a/gtk/gtkentry.c b/gtk/gtkentry.c
+index a566d8c..abdbf48 100644
+--- a/gtk/gtkentry.c
++++ b/gtk/gtkentry.c
+@@ -1573,6 +1573,11 @@ gtk_entry_class_init (GtkEntryClass *class)
+   /*
+    * Key bindings
+    */
++#ifdef __APPLE__
++#define OS_CTRL (GDK_MOD2_MASK|GDK_META_MASK)
++#else
++#define OS_CTRL GDK_CONTROL_MASK
++#endif   
+ 
+   binding_set = gtk_binding_set_by_class (class);
+ 
+@@ -1589,16 +1594,16 @@ gtk_entry_class_init (GtkEntryClass *class)
+   add_move_binding (binding_set, GDK_KP_Left, 0,
+ 		    GTK_MOVEMENT_VISUAL_POSITIONS, -1);
+   
+-  add_move_binding (binding_set, GDK_Right, GDK_CONTROL_MASK,
++  add_move_binding (binding_set, GDK_Right, OS_CTRL,
+ 		    GTK_MOVEMENT_WORDS, 1);
+ 
+-  add_move_binding (binding_set, GDK_Left, GDK_CONTROL_MASK,
++  add_move_binding (binding_set, GDK_Left, OS_CTRL,
+ 		    GTK_MOVEMENT_WORDS, -1);
+ 
+-  add_move_binding (binding_set, GDK_KP_Right, GDK_CONTROL_MASK,
++  add_move_binding (binding_set, GDK_KP_Right, OS_CTRL,
+ 		    GTK_MOVEMENT_WORDS, 1);
+ 
+-  add_move_binding (binding_set, GDK_KP_Left, GDK_CONTROL_MASK,
++  add_move_binding (binding_set, GDK_KP_Left, OS_CTRL,
+ 		    GTK_MOVEMENT_WORDS, -1);
+   
+   add_move_binding (binding_set, GDK_Home, 0,
+@@ -1613,49 +1618,49 @@ gtk_entry_class_init (GtkEntryClass *class)
+   add_move_binding (binding_set, GDK_KP_End, 0,
+ 		    GTK_MOVEMENT_DISPLAY_LINE_ENDS, 1);
+   
+-  add_move_binding (binding_set, GDK_Home, GDK_CONTROL_MASK,
++  add_move_binding (binding_set, GDK_Home, OS_CTRL,
+ 		    GTK_MOVEMENT_BUFFER_ENDS, -1);
+ 
+-  add_move_binding (binding_set, GDK_End, GDK_CONTROL_MASK,
++  add_move_binding (binding_set, GDK_End, OS_CTRL,
+ 		    GTK_MOVEMENT_BUFFER_ENDS, 1);
+ 
+-  add_move_binding (binding_set, GDK_KP_Home, GDK_CONTROL_MASK,
++  add_move_binding (binding_set, GDK_KP_Home, OS_CTRL,
+ 		    GTK_MOVEMENT_BUFFER_ENDS, -1);
+ 
+-  add_move_binding (binding_set, GDK_KP_End, GDK_CONTROL_MASK,
++  add_move_binding (binding_set, GDK_KP_End, OS_CTRL,
+ 		    GTK_MOVEMENT_BUFFER_ENDS, 1);
+ 
+   /* Select all
+    */
+-  gtk_binding_entry_add_signal (binding_set, GDK_a, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_a, OS_CTRL,
+                                 "move-cursor", 3,
+                                 GTK_TYPE_MOVEMENT_STEP, GTK_MOVEMENT_BUFFER_ENDS,
+                                 G_TYPE_INT, -1,
+ 				G_TYPE_BOOLEAN, FALSE);
+-  gtk_binding_entry_add_signal (binding_set, GDK_a, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_a, OS_CTRL,
+                                 "move-cursor", 3,
+                                 GTK_TYPE_MOVEMENT_STEP, GTK_MOVEMENT_BUFFER_ENDS,
+                                 G_TYPE_INT, 1,
+ 				G_TYPE_BOOLEAN, TRUE);  
+ 
+-  gtk_binding_entry_add_signal (binding_set, GDK_slash, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_slash, OS_CTRL,
+                                 "move-cursor", 3,
+                                 GTK_TYPE_MOVEMENT_STEP, GTK_MOVEMENT_BUFFER_ENDS,
+                                 G_TYPE_INT, -1,
+ 				G_TYPE_BOOLEAN, FALSE);
+-  gtk_binding_entry_add_signal (binding_set, GDK_slash, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_slash, OS_CTRL,
+                                 "move-cursor", 3,
+                                 GTK_TYPE_MOVEMENT_STEP, GTK_MOVEMENT_BUFFER_ENDS,
+                                 G_TYPE_INT, 1,
+ 				G_TYPE_BOOLEAN, TRUE);  
+   /* Unselect all 
+    */
+-  gtk_binding_entry_add_signal (binding_set, GDK_backslash, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_backslash, OS_CTRL,
+                                 "move-cursor", 3,
+                                 GTK_TYPE_MOVEMENT_STEP, GTK_MOVEMENT_VISUAL_POSITIONS,
+                                 G_TYPE_INT, 0,
+ 				G_TYPE_BOOLEAN, FALSE);
+-  gtk_binding_entry_add_signal (binding_set, GDK_a, GDK_SHIFT_MASK | GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_a, GDK_SHIFT_MASK | OS_CTRL,
+                                 "move-cursor", 3,
+                                 GTK_TYPE_MOVEMENT_STEP, GTK_MOVEMENT_VISUAL_POSITIONS,
+                                 G_TYPE_INT, 0,
+@@ -1688,33 +1693,33 @@ gtk_entry_class_init (GtkEntryClass *class)
+   gtk_binding_entry_add_signal (binding_set, GDK_BackSpace, GDK_SHIFT_MASK,
+ 				"backspace", 0);
+ 
+-  gtk_binding_entry_add_signal (binding_set, GDK_Delete, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_Delete, OS_CTRL,
+ 				"delete-from-cursor", 2,
+ 				G_TYPE_ENUM, GTK_DELETE_WORD_ENDS,
+ 				G_TYPE_INT, 1);
+ 
+-  gtk_binding_entry_add_signal (binding_set, GDK_KP_Delete, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_KP_Delete, OS_CTRL,
+ 				"delete-from-cursor", 2,
+ 				G_TYPE_ENUM, GTK_DELETE_WORD_ENDS,
+ 				G_TYPE_INT, 1);
+   
+-  gtk_binding_entry_add_signal (binding_set, GDK_BackSpace, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_BackSpace, OS_CTRL,
+ 				"delete-from-cursor", 2,
+ 				G_TYPE_ENUM, GTK_DELETE_WORD_ENDS,
+ 				G_TYPE_INT, -1);
+ 
+   /* Cut/copy/paste */
+ 
+-  gtk_binding_entry_add_signal (binding_set, GDK_x, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_x, OS_CTRL,
+ 				"cut-clipboard", 0);
+-  gtk_binding_entry_add_signal (binding_set, GDK_c, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_c, OS_CTRL,
+ 				"copy-clipboard", 0);
+-  gtk_binding_entry_add_signal (binding_set, GDK_v, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_v, OS_CTRL,
+ 				"paste-clipboard", 0);
+ 
+   gtk_binding_entry_add_signal (binding_set, GDK_Delete, GDK_SHIFT_MASK,
+ 				"cut-clipboard", 0);
+-  gtk_binding_entry_add_signal (binding_set, GDK_Insert, GDK_CONTROL_MASK,
++  gtk_binding_entry_add_signal (binding_set, GDK_Insert, OS_CTRL,
+ 				"copy-clipboard", 0);
+   gtk_binding_entry_add_signal (binding_set, GDK_Insert, GDK_SHIFT_MASK,
+ 				"paste-clipboard", 0);
+diff --git a/gtk/gtkprivate.h b/gtk/gtkprivate.h
+index 6386c32..5173c64 100644
+--- a/gtk/gtkprivate.h
++++ b/gtk/gtkprivate.h
+@@ -112,7 +112,7 @@ gboolean _gtk_fnmatch (const char *pattern,
+ #define GTK_DEFAULT_ACCEL_MOD_MASK_VIRTUAL GDK_CONTROL_MASK
+ #else
+ #define GTK_DEFAULT_ACCEL_MOD_MASK GDK_MOD2_MASK
+-#define GTK_DEFAULT_ACCEL_MOD_MASK_VIRTUAL GDK_META_MASK
++#define GTK_DEFAULT_ACCEL_MOD_MASK_VIRTUAL GDK_MOD2_MASK
+ #endif
+ 
+ /* When any of these modifiers are active, a key
+diff --git a/gtk/gtkrange.c b/gtk/gtkrange.c
+index 245fbf6..d25ba41 100644
+--- a/gtk/gtkrange.c
++++ b/gtk/gtkrange.c
+@@ -2561,7 +2561,7 @@ gtk_range_button_release (GtkWidget      *widget,
+ /**
+  * _gtk_range_get_wheel_delta:
+  * @range: a #GtkRange
+- * @direction: A #GdkScrollDirection
++ * @event: A #GdkEventScroll
+  * 
+  * Returns a good step value for the mouse wheel.
+  * 
+@@ -2570,21 +2570,46 @@ gtk_range_button_release (GtkWidget      *widget,
+  * Since: 2.4
+  **/
+ gdouble
+-_gtk_range_get_wheel_delta (GtkRange           *range,
+-			    GdkScrollDirection  direction)
++_gtk_range_get_wheel_delta (GtkRange       *range,
++                            GdkEventScroll *event)
+ {
+   GtkAdjustment *adj = range->adjustment;
++  gdouble dx, dy;
+   gdouble delta;
+ 
+-  if (GTK_IS_SCROLLBAR (range))
+-    delta = pow (adj->page_size, 2.0 / 3.0);
++  if (gdk_event_get_scroll_deltas ((GdkEvent *) event, &dx, &dy))
++    {
++      GtkAllocation allocation;
++
++      gtk_widget_get_allocation (GTK_WIDGET (range), &allocation);
++
++      if (gtk_orientable_get_orientation (GTK_ORIENTABLE (range)) == GTK_ORIENTATION_HORIZONTAL)
++        {
++          if (GTK_IS_SCROLLBAR (range) && adj->page_size > 0)
++            delta = dx * adj->page_size / allocation.width;
++          else
++            delta = dx * (adj->upper - adj->lower) / allocation.width;
++        }
++      else
++        {
++          if (GTK_IS_SCROLLBAR (range) && adj->page_size > 0)
++            delta = dy * adj->page_size / allocation.height;
++          else
++            delta = dy * (adj->upper - adj->lower) / allocation.height;
++        }
++    }
+   else
+-    delta = adj->step_increment * 2;
+-  
+-  if (direction == GDK_SCROLL_UP ||
+-      direction == GDK_SCROLL_LEFT)
+-    delta = - delta;
+-  
++    {
++      if (GTK_IS_SCROLLBAR (range))
++        delta = pow (adj->page_size, 2.0 / 3.0);
++      else
++        delta = adj->step_increment * 2;
++
++      if (event->direction == GDK_SCROLL_UP ||
++          event->direction == GDK_SCROLL_LEFT)
++        delta = - delta;
++    }
++
+   if (range->inverted)
+     delta = - delta;
+ 
+@@ -2603,7 +2628,7 @@ gtk_range_scroll_event (GtkWidget      *widget,
+       gdouble delta;
+       gboolean handled;
+ 
+-      delta = _gtk_range_get_wheel_delta (range, event->direction);
++      delta = _gtk_range_get_wheel_delta (range, event);
+ 
+       g_signal_emit (range, signals[CHANGE_VALUE], 0,
+                      GTK_SCROLL_JUMP, adj->value + delta,
+diff --git a/gtk/gtkrange.h b/gtk/gtkrange.h
+index 5463140..c672acb 100644
+--- a/gtk/gtkrange.h
++++ b/gtk/gtkrange.h
+@@ -199,8 +199,8 @@ gint                gtk_range_get_round_digits             (GtkRange      *range
+ 
+ 
+ /* internal API */
+-gdouble            _gtk_range_get_wheel_delta              (GtkRange      *range,
+-                                                            GdkScrollDirection direction);
++gdouble            _gtk_range_get_wheel_delta              (GtkRange       *range,
++                                                            GdkEventScroll *event);
+ 
+ void               _gtk_range_set_stop_values              (GtkRange      *range,
+                                                             gdouble       *values,
+diff --git a/gtk/gtkscrolledwindow.c b/gtk/gtkscrolledwindow.c
+index 1704d3c..8665f41 100644
+--- a/gtk/gtkscrolledwindow.c
++++ b/gtk/gtkscrolledwindow.c
+@@ -1565,31 +1565,79 @@ static gboolean
+ gtk_scrolled_window_scroll_event (GtkWidget      *widget,
+ 				  GdkEventScroll *event)
+ {
+-  GtkWidget *range;
++  GtkScrolledWindow *scrolled_window = GTK_SCROLLED_WINDOW (widget);
++  gboolean handled = FALSE;
++  gdouble delta_x;
++  gdouble delta_y;
+ 
+   g_return_val_if_fail (GTK_IS_SCROLLED_WINDOW (widget), FALSE);
+   g_return_val_if_fail (event != NULL, FALSE);  
+ 
+-  if (event->direction == GDK_SCROLL_UP || event->direction == GDK_SCROLL_DOWN)
+-    range = GTK_SCROLLED_WINDOW (widget)->vscrollbar;
+-  else
+-    range = GTK_SCROLLED_WINDOW (widget)->hscrollbar;
++  if (gdk_event_get_scroll_deltas ((GdkEvent *) event, &delta_x, &delta_y))
++    {
++      if (delta_x != 0.0 && scrolled_window->hscrollbar &&
++          gtk_widget_get_visible (scrolled_window->hscrollbar))
++        {
++          GtkAdjustment *adj;
++          gdouble new_value;
++
++          adj = gtk_range_get_adjustment (GTK_RANGE (scrolled_window->hscrollbar));
++
++          new_value = CLAMP (gtk_adjustment_get_value (adj) + delta_x,
++                             gtk_adjustment_get_lower (adj),
++                             gtk_adjustment_get_upper (adj) -
++                             gtk_adjustment_get_page_size (adj));
++
++          gtk_adjustment_set_value (adj, new_value);
++
++          handled = TRUE;
++        }
++
++      if (delta_y != 0.0 && scrolled_window->vscrollbar &&
++          gtk_widget_get_visible (scrolled_window->vscrollbar))
++        {
++          GtkAdjustment *adj;
++          gdouble new_value;
++
++          adj = gtk_range_get_adjustment (GTK_RANGE (scrolled_window->vscrollbar));
++
++          new_value = CLAMP (gtk_adjustment_get_value (adj) + delta_y,
++                             gtk_adjustment_get_lower (adj),
++                             gtk_adjustment_get_upper (adj) -
++                             gtk_adjustment_get_page_size (adj));
++
+ 
+-  if (range && gtk_widget_get_visible (range))
++          gtk_adjustment_set_value (adj, new_value);
++
++          handled = TRUE;
++        }
++    }
++  else
+     {
+       GtkAdjustment *adj = GTK_RANGE (range)->adjustment;
+       gdouble delta, new_value;
+ 
+-      delta = _gtk_range_get_wheel_delta (GTK_RANGE (range), event->direction);
++      if (event->direction == GDK_SCROLL_UP || event->direction == GDK_SCROLL_DOWN)
++        range = scrolled_window->vscrollbar;
++      else
++        range = scrolled_window->hscrollbar;
+ 
+-      new_value = CLAMP (adj->value + delta, adj->lower, adj->upper - adj->page_size);
+-      
+-      gtk_adjustment_set_value (adj, new_value);
++      if (range && gtk_widget_get_visible (range))
++        {
++          GtkAdjustment *adj = GTK_RANGE (range)->adjustment;
++          gdouble delta, new_value;
+ 
+-      return TRUE;
++          delta = _gtk_range_get_wheel_delta (GTK_RANGE (range), event);
++
++          new_value = CLAMP (adj->value + delta, adj->lower, adj->upper - adj->page_size);
++
++          gtk_adjustment_set_value (adj, new_value);
++
++          handled = TRUE;
++        }
+     }
+ 
+-  return FALSE;
++  return handled;
+ }
+ 
+ static gboolean
+diff --git a/gtk/gtktreeview.c b/gtk/gtktreeview.c
+index 89301eb..0d72788 100644
+--- a/gtk/gtktreeview.c
++++ b/gtk/gtktreeview.c
+@@ -2559,6 +2559,7 @@ gtk_tree_view_button_press (GtkWidget      *widget,
+   gint horizontal_separator;
+   gboolean path_is_selectable;
+   gboolean rtl;
++  gboolean edits_allowed;
+ 
+   rtl = (gtk_widget_get_direction (widget) == GTK_TEXT_DIR_RTL);
+   gtk_tree_view_stop_editing (tree_view, FALSE);
+@@ -2698,9 +2699,16 @@ gtk_tree_view_button_press (GtkWidget      *widget,
+ 
+       tree_view->priv->focus_column = column;
+ 
++      /* ARDOUR HACK */
++
++      if (g_object_get_data (G_OBJECT(tree_view), "mouse-edits-require-mod1")) {
++              edits_allowed = (event->state & GDK_MOD1_MASK);
++      } else {
++              /* regular GTK design: do edits if none of the default modifiers are active */
++              edits_allowed = !(event->state & gtk_accelerator_get_default_mod_mask ());
++      }
+       /* decide if we edit */
+-      if (event->type == GDK_BUTTON_PRESS && event->button == 1 &&
+-	  !(event->state & gtk_accelerator_get_default_mod_mask ()))
++      if (event->type == GDK_BUTTON_PRESS && event->button == 1 && edits_allowed)
+ 	{
+ 	  GtkTreePath *anchor;
+ 	  GtkTreeIter iter;
+diff --git a/gtk/gtkwidget.c b/gtk/gtkwidget.c
+index 1d1f6bb..9f0d89d 100644
+--- a/gtk/gtkwidget.c
++++ b/gtk/gtkwidget.c
+@@ -6234,7 +6234,11 @@ gtk_widget_set_double_buffered (GtkWidget *widget,
+ {
+   g_return_if_fail (GTK_IS_WIDGET (widget));
+ 
++#ifdef __APPLE__
++  double_buffered = FALSE;
++#else
+   double_buffered = (double_buffered != FALSE);
++#endif
+ 
+   if (double_buffered != gtk_widget_get_double_buffered (widget))
+     {
