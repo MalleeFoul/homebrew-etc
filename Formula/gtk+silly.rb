@@ -56,8 +56,8 @@ class Gtkxsilly < Formula
   end
 
   patch do
-    url "https://raw.githubusercontent.com/MalleeFoul/homebrew-etc/main/patches/gtk%2Bardour.diff"
-    sha256 "25efd01a3def6706a2c873919249dbd1315877e2b2128a02014846629f95cbac"
+    url "https://raw.githubusercontent.com/MalleeFoul/homebrew-etc/main/patches/gtk%2Bskullfaceemoji.patch"
+    sha256 "0688932b53cc0485185243ba475062f1d19ef58021f1573f4c66ff86fa5e379d"
   end
   def backend
     backend = "quartz"
