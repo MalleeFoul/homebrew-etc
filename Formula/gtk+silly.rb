@@ -55,11 +55,6 @@ class Gtkxsilly < Formula
     sha256 "ce5adf1a019ac7ed2a999efb65cfadeae50f5de8663638c7f765f8764aa7d931"
   end
 
-  
-  patch do
-    url "https://raw.githubusercontent.com/Homebrew/formula-patches/03cf8088210822aa2c1ab544ed58ea04c897d9c4/libtool/configure-big_sur.diff"
-    sha256 "35acd6aebc19843f1a2b3a63e880baceb0f5278ab1ace661e57a502d9d78c93c"
-  end
 
   patch do
     url "https://raw.githubusercontent.com/MalleeFoul/homebrew-etc/main/patches/gtk%2Bskullfaceemoji.diff"
