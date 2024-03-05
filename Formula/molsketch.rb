@@ -6,6 +6,7 @@ class Molsketch < Formula
   homepage ""
   url "https://github.com/hvennekate/Molsketch/archive/6402a208cbecdea8deac9321cca61e601d672531.zip"
   version "0.8.1"
+  HEAD "https://github.com/hvennekate/Molsketch.git"
   sha256 "38f3048686fc7147fc3d972b1b4cb825cdb9de1549caf701b0fed281251e7860"
   license "GPL-2"
 
