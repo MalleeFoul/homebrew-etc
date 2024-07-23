@@ -5,7 +5,7 @@ class Kholidays < Formula
   homepage "https://api.kde.org/frameworks/kholidays/html/index.html"
   url "https://invent.kde.org/frameworks/kholidays/-/archive/v6.4.0/kholidays-v6.4.0.tar.gz"
   sha256 "8d176ce1833e58a815f14df75f1809c8872baff2f02c38b4894f1ae17d3b23af"
-  license all_of: ["LGPL-2.0-or-later", "BSD-2-Clause", "CC0-1.0", "GPL-3.0+", "Bison-exception-2.2", "GPL-2.0-with-bison-exception"]
+
 
   depends_on "cmake" => :build
   depends_on "qt" => :build

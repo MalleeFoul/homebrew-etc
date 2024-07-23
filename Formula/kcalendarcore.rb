@@ -5,7 +5,6 @@ class Kcalendarcore < Formula
   homepage "https://api.kde.org/frameworks/kcalendarcore/html/index.html"
   url "https://invent.kde.org/frameworks/kcalendarcore/-/archive/v6.4.0/kcalendarcore-v6.4.0.tar.gz"
   sha256 "89bc8d6a9b15ecafd01a17d4a70ee7724d324c2fbbc3fd15da6f2bda1c542507"
-  license :all_of ["BSD-3-Clause", "LGPL-2.0-or-later", "LGPL-3.0-or-later"]
 
   depends_on "cmake" => :build
   depends_on "qt"

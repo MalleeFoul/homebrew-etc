@@ -5,7 +5,6 @@ class Kcontacts < Formula
   homepage "https://api.kde.org/frameworks/kcontacts/html/index.html"
   url "https://invent.kde.org/frameworks/kcontacts/-/archive/v6.4.0/kcontacts-v6.4.0.tar.gz"
   sha256 "576b7c32fe6650100dc6891c035fd2e917f55ba3babd4264f40268dbd62e3159"
-  license :all_of ["Unicode-DFS-2016", "CC0-1.0", "LGPL-2.0-or-later",  "MIT", "BSD-3-Clause"]
 
   depends_on "cmake" => :build
   depends_on "kf6-kconfig"
