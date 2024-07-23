@@ -6,6 +6,7 @@ class Kf6Kconfig < Formula
   url "https://invent.kde.org/frameworks/kconfig/-/archive/v6.4.0/kconfig-v6.4.0.tar.gz"
   sha256 "40f4bc838194294f7bda50fb2f6cf82c2443cdd159fdb5a469ecf2d2512591a2"
   head "https://invent.kde.org/frameworks/kconfig.git", branch: "master"
+  conflicts_with "kde-mac/kde/kf5-kconfig", because: :versioned_formula
 
   depends_on "cmake" => [:build, :test]
   depends_on "doxygen" => :build

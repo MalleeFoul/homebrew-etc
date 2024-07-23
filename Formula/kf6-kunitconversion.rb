@@ -7,6 +7,7 @@ class Kf6Kunitconversion < Formula
   version "6.4.0"
   sha256 "f10df8d251f3351070dbc6f08b9612edbca6850b45aba0391610c45b0cb7917d"
   head "https://invent.kde.org/frameworks/kunitconversion.git", branch: "master"
+  conflicts_with "kde-mac/kde/kf5-kunitconversion", because: :versioned_formula
 
   depends_on "cmake" => [:build, :test]
   depends_on "doxygen" => :build

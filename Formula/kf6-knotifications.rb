@@ -7,6 +7,7 @@ class Kf6Knotifications < Formula
   version "6.4.0"
   sha256 "a65e80f5f04b3b17f899899c76a3eb71169091e9ba3b25ffe8261c6cf26fb4fa"
   head "https://invent.kde.org/frameworks/knotifications.git", branch: "master"
+  conflicts_with "kde-mac/kde/kf5-knotifications", because: :versioned_formula
 
 
   depends_on "cmake" => [:build, :test]

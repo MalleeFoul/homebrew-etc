@@ -6,6 +6,7 @@ class Kf6Kcoreaddons < Formula
   url "https://invent.kde.org/frameworks/kcoreaddons/-/archive/v6.4.0/kcoreaddons-v6.4.0.tar.gz"
   sha256 "71c9f3c825fd049cc8e5e24b8fa055f5a83145a96cd4bcc22b30190f9cd6b5b0"
   head "https://invent.kde.org/frameworks/kcoreaddons.git", branch: "master"
+  conflicts_with "kde-mac/kde/kf5-kcoreaddons", because: :versioned_formula
 
   depends_on "cmake" => :build
   depends_on "doxygen" => :build

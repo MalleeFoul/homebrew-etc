@@ -8,8 +8,8 @@ class Kcontacts < Formula
   license :all_of ["Unicode-DFS-2016", "CC0-1.0", "LGPL-2.0-or-later",  "MIT", "BSD-3-Clause"]
 
   depends_on "cmake" => :build
-  # depends_on "kf6-kconfig"
-  # depends_on "kf6-kcodecs"
+  depends_on "kf6-kconfig"
+  depends_on "kf6-kcodecs"
 
   def install
     system "cmake", *kde_cmake_args

@@ -7,6 +7,7 @@ class Kf6Kcodecs < Formula
   version "6.4.0"
   sha256 "e2a51aa80c94d291ce431d990d8429d86520de364007cdb31fc7c7bd4c8f80e8"
   head "https://invent.kde.org/frameworks/kcodecs.git", branch: "master"
+  conflicts_with "kde-mac/kde/kf5-kcodecs", because: :versioned_formula
 
   depends_on "cmake" => [:build, :test]
   depends_on "doxygen" => :build

@@ -7,6 +7,7 @@ class Kf6Kwindowsystem < Formula
   version "6.4.0"
   sha256 "3181ce7e8749e8fbc9ed7d8a87ea2177cc68a4fd9ec382c0049f2ea1bac22a58"
   head "https://invent.kde.org/frameworks/kwindowsystem.git", branch: "master"
+  conflicts_with "kde-mac/kde/kf5-kwindowsystem", because: :versioned_formula
 
   depends_on "cmake" => [:build, :test]
   depends_on "doxygen" => :build
