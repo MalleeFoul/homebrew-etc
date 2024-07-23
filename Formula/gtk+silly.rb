@@ -5,7 +5,6 @@ class Gtkxsilly < Formula
   sha256 "ac2ac757f5942d318a311a54b0c80b5ef295f299c2a73c632f6bfb1ff49cc6da"
   license "LGPL-2.0-or-later"
   revision 1
-  conflicts_with "gtk+", because: "this is basically just my shitty modification of it"
 
   # From https://blog.gtk.org/2020/12/16/gtk-4-0/:
   # "It does mean, however, that GTK 2 has reached the end of its life.
@@ -16,13 +15,16 @@ class Gtkxsilly < Formula
   livecheck do
     skip "GTK 2 was declared end of life in 2020-12"
   end
+  
 
   depends_on "gobject-introspection" => :build
   depends_on "pkg-config" => [:build, :test]
-  depends_on "atk"
+  depends_on "at-spi2-core"
   depends_on "gdk-pixbuf"
   depends_on "hicolor-icon-theme"
   depends_on "pango"
+
+  conflicts_with "gtk+", because: "this is basically just my shitty modification of it"
 
   on_linux do
     depends_on "cairo"
