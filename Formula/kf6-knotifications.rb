@@ -27,7 +27,6 @@ class Kf6Knotifications < Formula
     # setBadgeLabelText method is deprecated since 5.12
     args = %w[
       -DCMAKE_C_FLAGS_RELEASE=-DNDEBUG
-      -DQT_DISABLE_DEPRECATED_BEFORE=0x050b00
       -DCMAKE_CXX_FLAGS_RELEASE=-DNDEBUG
       -DQT_DISABLE_DEPRECATED_BEFORE=0x050b00
     ]
