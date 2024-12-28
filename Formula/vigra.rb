@@ -33,7 +33,7 @@ class Vigra < Formula
     
 
   def install
-    system "cmake", "-S", ".", "-B", "build", *std_cmake_args, "-DVIGRANUMPY_INSTALL_DIR=#{libdir}/python3.12/site-packages"
+    system "cmake", "-S", ".", "-B", "build", *std_cmake_args, "-DVIGRANUMPY_INSTALL_DIR=#{lib}/python3.12/site-packages"
     system "cmake", "--build", "build"
     system "cmake", "--install", "build"
   end
