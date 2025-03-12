@@ -25,7 +25,13 @@ class Gimagereader < Formula
   depends_on "json-glib"
   depends_on "quazip"
   
-  
+stable do
+  # I think this may have been fixed in the head version, but i'm not sure
+  patch do
+    url "https://github.com/MalleeFoul/homebrew-etc/raw/refs/heads/main/patches/gImagerReader.diff"
+    sha256 "52f997cb224938ed881af2544f7b514854613c609b43a7efe585574e6e213b0a"
+  end
+end
   # Additional dependency
   # resource "" do
   #   url ""
